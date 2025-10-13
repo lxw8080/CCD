@@ -1,0 +1,30 @@
+# Systemd服务配置文件
+# 将此文件复制到 /etc/systemd/system/ccd-backend.service
+# 然后运行:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable ccd-backend
+#   sudo systemctl start ccd-backend
+
+[Unit]
+Description=CCD Backend Gunicorn Service
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/CCD/backend
+Environment="PATH=/path/to/CCD/backend/venv/bin"
+ExecStart=/path/to/CCD/backend/venv/bin/gunicorn \
+    -c /path/to/CCD/deployment/gunicorn_config.py \
+    config.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
