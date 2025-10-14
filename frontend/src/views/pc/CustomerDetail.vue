@@ -269,8 +269,11 @@ const fetchCompleteness = async () => {
 const fetchDocumentTypes = async () => {
   try {
     const response = await getDocumentTypes()
-    documentTypes.value = response.results || []
+    // API 返回的是数组（已禁用分页）
+    documentTypes.value = Array.isArray(response) ? response : []
+    console.log('资料类型数据:', documentTypes.value)
   } catch (error) {
+    console.error('获取资料类型失败:', error)
     ElMessage.error('获取资料类型失败')
   }
 }

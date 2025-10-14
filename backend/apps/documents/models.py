@@ -1,13 +1,16 @@
 import os
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from apps.customers.models import Customer
 
 
 def document_upload_path(instance, filename):
     """生成文件上传路径"""
     ext = os.path.splitext(filename)[1]
-    new_filename = f"{instance.customer.id}_{instance.document_type.id}_{instance.uploaded_at.strftime('%Y%m%d%H%M%S')}{ext}"
+    # 使用当前时间，因为 uploaded_at 在文件保存时还未设置
+    timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+    new_filename = f"{instance.customer.id}_{instance.document_type.id}_{timestamp}{ext}"
     return os.path.join('documents', str(instance.customer.id), new_filename)
 
 
