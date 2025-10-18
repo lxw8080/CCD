@@ -9,8 +9,11 @@ class DocumentTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DocumentType
-        fields = ['id', 'name', 'is_required', 'sort_order', 'description', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = [
+            'id', 'name', 'is_required', 'sort_order', 'description',
+            'allowed_file_types', 'max_file_count', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -31,10 +34,20 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'uploaded_by', 'uploaded_at', 'updated_at', 'file_size', 'file_type']
 
     def get_file_url(self, obj):
+        if not obj.file:
+            return None
+
+        url = obj.file.url
         request = self.context.get('request')
-        if obj.file and request:
-            return request.build_absolute_uri(obj.file.url)
-        return None
+
+        if request:
+            host = request.get_host()
+            if url.startswith(('http://', 'https://')):
+                return url
+            if host not in {'127.0.0.1', '127.0.0.1:8000', 'localhost', 'localhost:8000'}:
+                return request.build_absolute_uri(url)
+
+        return url
 
     def get_file_type_display(self, obj):
         return get_file_type_display(obj.file_type)
@@ -54,8 +67,9 @@ class DocumentUploadSerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
 
     def validate_file(self, value):
-        # 验证文件类型和大小
+        # 验证文件类型和大小，并缓存识别结果供后续使用
         from .validators import validate_document_file
-        validate_document_file(value)
+        file_type = validate_document_file(value)
+        setattr(value, 'detected_file_type', file_type)
         return value
 

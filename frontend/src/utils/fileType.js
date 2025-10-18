@@ -43,15 +43,15 @@ export const FILE_TYPES = {
  */
 export function getFileType(filename) {
   if (!filename) return null
-  
+
   const ext = filename.split('.').pop().toLowerCase()
-  
+
   for (const [type, config] of Object.entries(FILE_TYPES)) {
     if (config.extensions.includes(ext)) {
       return type
     }
   }
-  
+
   return null
 }
 
@@ -105,6 +105,34 @@ export function getAcceptAttribute() {
   }
   return accepts.join(',')
 }
+
+/**
+ * 根据 MIME 类型获取文件类型
+ * @param {string} mime - 文件的 MIME 类型
+ * @returns {string|null}
+ */
+export function getFileTypeByMime(mime) {
+  if (!mime) return null
+  for (const [type, config] of Object.entries(FILE_TYPES)) {
+    if (config.mimeTypes && config.mimeTypes.includes(mime)) {
+      return type
+    }
+  }
+  return null
+}
+
+/**
+ * 从 File 对象推断文件类型（优先按文件名扩展名，其次按 MIME）
+ * @param {File} file
+ * @returns {string|null}
+ */
+export function getFileTypeFromFile(file) {
+  if (!file) return null
+  const byName = getFileType(file.name)
+  if (byName) return byName
+  return getFileTypeByMime(file.type)
+}
+
 
 /**
  * 判断是否为图片

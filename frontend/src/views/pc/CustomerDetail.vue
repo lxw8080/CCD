@@ -129,11 +129,17 @@
                   <el-button
                     type="primary"
                     :loading="uploadLoading"
-                    :disabled="!uploadForm.documentType || fileList.length === 0"
+                    :disabled="!uploadForm.documentType || fileList.length === 0 || !canUpload"
                     @click="handleUpload"
                   >
                     上传
                   </el-button>
+                  <span v-if="uploadForm.documentType" style="margin-left: 10px; color: #909399; font-size: 12px">
+                    {{ uploadHintText }}
+                  </span>
+                  <span v-if="uploadForm.documentType && !canUpload" style="margin-left: 10px; color: #f56c6c; font-size: 12px">
+                    已达到最大文件数限制
+                  </span>
                 </el-form-item>
               </el-form>
             </el-card>
@@ -218,6 +224,7 @@ import { compressImage, formatFileSize } from '@/utils/image'
 import { getFileType, getFileTypeName, getAcceptAttribute, isImage } from '@/utils/fileType'
 import { PreviewDialog } from '@/components/FilePreview'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -240,7 +247,68 @@ const uploadForm = reactive({
   documentType: null
 })
 
-const acceptAttribute = computed(() => getAcceptAttribute())
+// 当前选中的资料类型信息
+const currentDocumentType = computed(() => {
+  if (!uploadForm.documentType) return null
+  return documentTypes.value.find(dt => dt.id === uploadForm.documentType)
+})
+
+// 当前资料类型已上传的文件数
+const uploadedCount = computed(() => {
+  if (!uploadForm.documentType) return 0
+  return documents.value.filter(doc => doc.document_type === uploadForm.documentType).length
+})
+
+// 是否可以上传（检查文件数量限制）
+const canUpload = computed(() => {
+  if (!uploadForm.documentType) return false
+  const docType = currentDocumentType.value
+  if (!docType) return false
+
+  // 如果没有设置最大文件数限制（0 表示不限制），则可以上传
+  if (docType.max_file_count === 0) return true
+
+  // 否则检查是否已达到限制
+  return uploadedCount.value < docType.max_file_count
+})
+
+// 上传提示信息
+const uploadHintText = computed(() => {
+  if (!uploadForm.documentType) return ''
+  const docType = currentDocumentType.value
+  if (!docType) return ''
+
+  if (docType.max_file_count === 0) {
+    return '无限制'
+  }
+
+  return `已上传 ${uploadedCount.value} / 最多 ${docType.max_file_count} 个文件`
+})
+
+// 动态生成 accept 属性
+const acceptAttribute = computed(() => {
+  const docType = currentDocumentType.value
+  if (!docType || !docType.allowed_file_types || docType.allowed_file_types.length === 0) {
+    // 如果没有设置限制，允许所有文件类型
+    return getAcceptAttribute()
+  }
+
+  // 根据允许的文件类型生成 accept 字符串
+  const FILE_TYPES = {
+    image: { extensions: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'], mimeTypes: ['image/*'] },
+    video: { extensions: ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv'], mimeTypes: ['video/*'] },
+    pdf: { extensions: ['.pdf'], mimeTypes: ['application/pdf'] },
+    document: { extensions: ['.doc', '.docx', '.txt', '.rtf'], mimeTypes: ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'application/rtf'] },
+    spreadsheet: { extensions: ['.xls', '.xlsx', '.csv'], mimeTypes: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'] }
+  }
+
+  const acceptTypes = docType.allowed_file_types
+    .map(type => FILE_TYPES[type]?.extensions?.join(',') || '')
+    .filter(ext => ext)
+    .join(',')
+
+  return acceptTypes || getAcceptAttribute()
+})
 
 const statusMap = {
   pending: { text: '资料收集中', type: 'info' },
@@ -342,6 +410,24 @@ const handleUpload = async () => {
     return
   }
 
+  // 检查文件数量限制
+  if (!canUpload.value) {
+    ElMessage.error('已达到最大文件数限制')
+    return
+  }
+
+  // 验证文件类型
+  const docType = currentDocumentType.value
+  if (docType && docType.allowed_file_types && docType.allowed_file_types.length > 0) {
+    for (const file of fileList.value) {
+      const fileType = getFileType(file.name)
+      if (!docType.allowed_file_types.includes(fileType)) {
+        ElMessage.error(`文件 ${file.name} 的类型不符合要求。允许的类型: ${docType.allowed_file_types.join(', ')}`)
+        return
+      }
+    }
+  }
+
   uploadLoading.value = true
 
   try {
@@ -373,7 +459,12 @@ const handleUpload = async () => {
     fetchDocuments()
     fetchCompleteness()
   } catch (error) {
-    ElMessage.error('上传失败')
+    // 检查是否是后端返回的验证错误
+    if (error.response?.data?.error) {
+      ElMessage.error(error.response.data.error)
+    } else {
+      ElMessage.error('上传失败')
+    }
   } finally {
     uploadLoading.value = false
   }

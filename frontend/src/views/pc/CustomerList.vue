@@ -101,6 +101,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { getCustomers, deleteCustomer } from '@/api/customer'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Plus } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()

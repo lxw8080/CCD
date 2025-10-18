@@ -65,7 +65,38 @@ def upload_document(request):
 
     # 自动检测文件类型
     file_obj = serializer.validated_data['file']
-    file_type = get_file_type(file_obj.name)
+    file_type = getattr(file_obj, 'detected_file_type', None)
+    if not file_type:
+        file_type = get_file_type(
+            file_obj.name,
+            getattr(file_obj, 'content_type', None)
+        )
+
+    if not file_type:
+        return Response(
+            {'error': '无法识别文件类型，请检查文件是否支持上传'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ===== 新增：验证文件类型限制 =====
+    if doc_type.allowed_file_types and len(doc_type.allowed_file_types) > 0:
+        if file_type not in doc_type.allowed_file_types:
+            return Response(
+                {'error': f'不支持的文件类型: {file_type}。允许的类型: {", ".join(doc_type.allowed_file_types)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    # ===== 新增：验证文件数量限制 =====
+    if doc_type.max_file_count > 0:
+        existing_count = Document.objects.filter(
+            customer=customer,
+            document_type=doc_type
+        ).count()
+        if existing_count >= doc_type.max_file_count:
+            return Response(
+                {'error': f'该资料类型最多只能上传 {doc_type.max_file_count} 个文件，已上传 {existing_count} 个'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     # 创建文档记录
     document = Document.objects.create(
@@ -107,11 +138,28 @@ def batch_upload(request):
 
     # 批量创建文档
     documents = []
+    errors = []
     for file in files:
         try:
             # 验证文件
             from .validators import validate_document_file
             file_type = validate_document_file(file)
+
+            # ===== 新增：验证文件类型限制 =====
+            if doc_type.allowed_file_types and len(doc_type.allowed_file_types) > 0:
+                if file_type not in doc_type.allowed_file_types:
+                    errors.append(f'{file.name}: 不支持的文件类型')
+                    continue
+
+            # ===== 新增：验证文件数量限制 =====
+            if doc_type.max_file_count > 0:
+                existing_count = Document.objects.filter(
+                    customer=customer,
+                    document_type=doc_type
+                ).count()
+                if existing_count + len(documents) >= doc_type.max_file_count:
+                    errors.append(f'{file.name}: 已达到最大文件数限制')
+                    continue
 
             document = Document.objects.create(
                 customer=customer,
@@ -121,13 +169,18 @@ def batch_upload(request):
                 uploaded_by=request.user
             )
             documents.append(document)
-        except Exception:
-            # 跳过无效文件
+        except Exception as e:
+            # 记录错误
+            errors.append(f'{file.name}: {str(e)}')
             continue
 
-    # 返回创建的文档列表
+    # 返回创建的文档列表和错误信息
     serializer = DocumentSerializer(
         documents, many=True, context={'request': request}
     )
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    response_data = {
+        'documents': serializer.data,
+        'errors': errors if errors else None
+    }
+    return Response(response_data, status=status.HTTP_201_CREATED)
 

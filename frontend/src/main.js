@@ -41,6 +41,10 @@ async function initApp() {
     app.use(Vant.Overlay)
     app.use(Vant.PullRefresh)
     app.use(Vant.Divider)
+    app.use(Vant.Progress)
+    app.use(Vant.NoticeBar)
+    app.use(Vant.Icon)
+    app.use(Vant.Picker)
   } else {
     // PC端使用 Element Plus
     await import('element-plus/dist/index.css')

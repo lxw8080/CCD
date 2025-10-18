@@ -48,6 +48,17 @@ class DocumentType(models.Model):
     is_required = models.BooleanField(default=True, verbose_name='是否必需')
     sort_order = models.IntegerField(default=0, verbose_name='排序')
     description = models.TextField(blank=True, null=True, verbose_name='说明')
+    allowed_file_types = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='允许的文件类型',
+        help_text='允许的文件类型列表，如 ["image", "video", "pdf"]，空列表表示允许所有类型'
+    )
+    max_file_count = models.IntegerField(
+        default=0,
+        verbose_name='最大文件数',
+        help_text='每个资料类型最多允许上传的文件数，0 表示不限制'
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     
