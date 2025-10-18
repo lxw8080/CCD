@@ -109,7 +109,7 @@
                     />
                   </el-select>
                 </el-form-item>
-                
+
                 <el-form-item>
                   <el-upload
                     ref="uploadRef"
@@ -117,14 +117,14 @@
                     :on-change="handleFileChange"
                     :file-list="fileList"
                     :limit="10"
-                    accept="image/*"
+                    :accept="acceptAttribute"
                     multiple
                     list-type="picture-card"
                   >
                     <el-icon><Plus /></el-icon>
                   </el-upload>
                 </el-form-item>
-                
+
                 <el-form-item>
                   <el-button
                     type="primary"
@@ -153,10 +153,24 @@
               
               <el-table :data="documents" border>
                 <el-table-column prop="document_type_name" label="资料类型" width="150" />
-                <el-table-column prop="file_name" label="文件名" />
+                <el-table-column label="文件名" width="200">
+                  <template #default="{ row }">
+                    <div style="display: flex; align-items: center; gap: 8px">
+                      <el-icon :size="20">
+                        <component :is="getFileTypeIconComponent(row.file_type)" />
+                      </el-icon>
+                      <span>{{ row.file_name }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="file_size" label="文件大小" width="120">
                   <template #default="{ row }">
                     {{ formatFileSize(row.file_size) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="file_type" label="文件类型" width="100">
+                  <template #default="{ row }">
+                    {{ getFileTypeName(row.file_type) }}
                   </template>
                 </el-table-column>
                 <el-table-column prop="status" label="状态" width="100">
@@ -168,10 +182,10 @@
                 </el-table-column>
                 <el-table-column prop="uploaded_by_info.username" label="上传人" width="100" />
                 <el-table-column prop="uploaded_at" label="上传时间" width="180" />
-                <el-table-column label="操作" width="150" fixed="right">
+                <el-table-column label="操作" width="180" fixed="right">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="handlePreview(row)">
-                      查看
+                      预览
                     </el-button>
                     <el-button type="danger" size="small" @click="handleDeleteDoc(row.id)">
                       删除
@@ -185,19 +199,24 @@
       </el-main>
     </el-container>
     
-    <!-- 图片预览对话框 -->
-    <el-dialog v-model="previewVisible" title="图片预览" width="80%">
-      <img :src="previewUrl" style="width: 100%" />
-    </el-dialog>
+    <!-- 文件预览对话框 -->
+    <PreviewDialog
+      v-model="previewVisible"
+      :file-url="previewUrl"
+      :file-name="previewFileName"
+      :file-type="previewFileType"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerCompleteness } from '@/api/customer'
 import { getDocumentTypes, getDocuments, uploadDocument, deleteDocument } from '@/api/document'
 import { compressImage, formatFileSize } from '@/utils/image'
+import { getFileType, getFileTypeName, getAcceptAttribute, isImage } from '@/utils/fileType'
+import { PreviewDialog } from '@/components/FilePreview'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
@@ -214,10 +233,14 @@ const documents = ref([])
 const fileList = ref([])
 const previewVisible = ref(false)
 const previewUrl = ref('')
+const previewFileName = ref('')
+const previewFileType = ref('image')
 
 const uploadForm = reactive({
   documentType: null
 })
+
+const acceptAttribute = computed(() => getAcceptAttribute())
 
 const statusMap = {
   pending: { text: '资料收集中', type: 'info' },
@@ -239,6 +262,18 @@ const getStatusText = (status) => statusMap[status]?.text || status
 const getStatusType = (status) => statusMap[status]?.type || 'info'
 const getDocStatusText = (status) => docStatusMap[status]?.text || status
 const getDocStatusType = (status) => docStatusMap[status]?.type || 'info'
+
+// 文件类型图标映射（用于 Element Plus 图标组件）
+const getFileTypeIconComponent = (fileType) => {
+  const iconMap = {
+    image: 'Picture',
+    video: 'VideoPlay',
+    pdf: 'DocumentCopy',
+    document: 'Document',
+    spreadsheet: 'Document'
+  }
+  return iconMap[fileType] || 'Document'
+}
 
 const getProgressColor = (percentage) => {
   if (percentage < 50) return '#f56c6c'
@@ -301,33 +336,39 @@ const handleUpload = async () => {
     ElMessage.warning('请选择资料类型')
     return
   }
-  
+
   if (fileList.value.length === 0) {
     ElMessage.warning('请选择要上传的文件')
     return
   }
-  
+
   uploadLoading.value = true
-  
+
   try {
     // 上传每个文件
     for (const file of fileList.value) {
       const formData = new FormData()
-      
-      // 压缩图片
-      const compressedFile = await compressImage(file.raw)
-      
+
+      // 获取文件类型
+      const fileType = getFileType(file.name)
+
+      // 如果是图片，进行压缩
+      let uploadFile = file.raw
+      if (isImage(fileType)) {
+        uploadFile = await compressImage(file.raw)
+      }
+
       formData.append('customer', route.params.id)
       formData.append('document_type', uploadForm.documentType)
-      formData.append('file', compressedFile)
-      
+      formData.append('file', uploadFile)
+
       await uploadDocument(formData)
     }
-    
+
     ElMessage.success('上传成功')
     fileList.value = []
     uploadForm.documentType = null
-    
+
     // 刷新数据
     fetchDocuments()
     fetchCompleteness()
@@ -340,6 +381,8 @@ const handleUpload = async () => {
 
 const handlePreview = (doc) => {
   previewUrl.value = doc.file_url
+  previewFileName.value = doc.file_name
+  previewFileType.value = doc.file_type || 'image'
   previewVisible.value = true
 }
 

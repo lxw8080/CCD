@@ -8,6 +8,7 @@ from .models import Document, DocumentType
 from .serializers import (
     DocumentSerializer, DocumentTypeSerializer, DocumentUploadSerializer
 )
+from .validators import get_file_type
 from apps.customers.models import Customer
 
 
@@ -54,22 +55,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
 def upload_document(request):
     """上传资料文档"""
     serializer = DocumentUploadSerializer(data=request.data)
-    
+
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     # 验证客户和资料类型是否存在
     customer = get_object_or_404(Customer, id=serializer.validated_data['customer'])
     doc_type = get_object_or_404(DocumentType, id=serializer.validated_data['document_type'])
-    
+
+    # 自动检测文件类型
+    file_obj = serializer.validated_data['file']
+    file_type = get_file_type(file_obj.name)
+
     # 创建文档记录
     document = Document.objects.create(
         customer=customer,
         document_type=doc_type,
-        file=serializer.validated_data['file'],
+        file=file_obj,
+        file_type=file_type or 'image',
         uploaded_by=request.user
     )
-    
+
     # 返回创建的文档信息
     result_serializer = DocumentSerializer(document, context={'request': request})
     return Response(result_serializer.data, status=status.HTTP_201_CREATED)
@@ -82,38 +88,43 @@ def batch_upload(request):
     files = request.FILES.getlist('files')
     customer_id = request.data.get('customer')
     doc_type_id = request.data.get('document_type')
-    
+
     if not files:
         return Response(
             {'error': '没有上传文件'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     if not customer_id or not doc_type_id:
         return Response(
             {'error': '缺少客户ID或资料类型ID'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     # 验证客户和资料类型是否存在
     customer = get_object_or_404(Customer, id=customer_id)
     doc_type = get_object_or_404(DocumentType, id=doc_type_id)
-    
+
     # 批量创建文档
     documents = []
     for file in files:
-        # 限制文件大小
-        if file.size > 10 * 1024 * 1024:
+        try:
+            # 验证文件
+            from .validators import validate_document_file
+            file_type = validate_document_file(file)
+
+            document = Document.objects.create(
+                customer=customer,
+                document_type=doc_type,
+                file=file,
+                file_type=file_type,
+                uploaded_by=request.user
+            )
+            documents.append(document)
+        except Exception:
+            # 跳过无效文件
             continue
-        
-        document = Document.objects.create(
-            customer=customer,
-            document_type=doc_type,
-            file=file,
-            uploaded_by=request.user
-        )
-        documents.append(document)
-    
+
     # 返回创建的文档列表
     serializer = DocumentSerializer(
         documents, many=True, context={'request': request}

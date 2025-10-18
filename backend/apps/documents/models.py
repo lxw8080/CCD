@@ -5,6 +5,34 @@ from django.utils import timezone
 from apps.customers.models import Customer
 
 
+# 文件类型定义
+FILE_TYPE_CHOICES = [
+    ('image', '图片'),
+    ('video', '视频'),
+    ('pdf', 'PDF'),
+    ('document', '文档'),
+    ('spreadsheet', '表格'),
+]
+
+# 支持的文件扩展名
+ALLOWED_EXTENSIONS = {
+    'image': ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
+    'video': ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'],
+    'pdf': ['pdf'],
+    'document': ['doc', 'docx', 'txt', 'rtf'],
+    'spreadsheet': ['xls', 'xlsx', 'csv']
+}
+
+# 文件大小限制（字节）
+FILE_SIZE_LIMITS = {
+    'image': 5 * 1024 * 1024,      # 5MB
+    'video': 50 * 1024 * 1024,     # 50MB
+    'pdf': 10 * 1024 * 1024,       # 10MB
+    'document': 10 * 1024 * 1024,  # 10MB
+    'spreadsheet': 10 * 1024 * 1024  # 10MB
+}
+
+
 def document_upload_path(instance, filename):
     """生成文件上传路径"""
     ext = os.path.splitext(filename)[1]
@@ -53,12 +81,18 @@ class Document(models.Model):
         related_name='documents',
         verbose_name='资料类型'
     )
-    file = models.ImageField(
+    file = models.FileField(
         upload_to=document_upload_path,
         verbose_name='文件'
     )
     file_name = models.CharField(max_length=255, verbose_name='文件名')
     file_size = models.IntegerField(default=0, verbose_name='文件大小(字节)')
+    file_type = models.CharField(
+        max_length=20,
+        choices=FILE_TYPE_CHOICES,
+        default='image',
+        verbose_name='文件类型'
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,

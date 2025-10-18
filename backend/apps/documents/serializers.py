@@ -1,11 +1,12 @@
 from rest_framework import serializers
 from .models import Document, DocumentType
+from .validators import validate_document_file, get_file_type_display
 from apps.users.serializers import UserSerializer
 
 
 class DocumentTypeSerializer(serializers.ModelSerializer):
     """资料类型序列化器"""
-    
+
     class Meta:
         model = DocumentType
         fields = ['id', 'name', 'is_required', 'sort_order', 'description', 'created_at']
@@ -18,22 +19,26 @@ class DocumentSerializer(serializers.ModelSerializer):
     document_type_name = serializers.CharField(source='document_type.name', read_only=True)
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     file_url = serializers.SerializerMethodField()
+    file_type_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = [
             'id', 'customer', 'customer_name', 'document_type', 'document_type_name',
-            'file', 'file_url', 'file_name', 'file_size', 'status', 'notes',
-            'uploaded_by', 'uploaded_by_info', 'uploaded_at', 'updated_at'
+            'file', 'file_url', 'file_name', 'file_size', 'file_type', 'file_type_display',
+            'status', 'notes', 'uploaded_by', 'uploaded_by_info', 'uploaded_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'uploaded_by', 'uploaded_at', 'updated_at', 'file_size']
-    
+        read_only_fields = ['id', 'uploaded_by', 'uploaded_at', 'updated_at', 'file_size', 'file_type']
+
     def get_file_url(self, obj):
         request = self.context.get('request')
         if obj.file and request:
             return request.build_absolute_uri(obj.file.url)
         return None
-    
+
+    def get_file_type_display(self, obj):
+        return get_file_type_display(obj.file_type)
+
     def create(self, validated_data):
         # 自动设置上传人
         request = self.context.get('request')
@@ -46,12 +51,11 @@ class DocumentUploadSerializer(serializers.Serializer):
     """文档上传序列化器"""
     customer = serializers.IntegerField(required=True)
     document_type = serializers.IntegerField(required=True)
-    file = serializers.ImageField(required=True)
-    
+    file = serializers.FileField(required=True)
+
     def validate_file(self, value):
-        # 限制文件大小为10MB
-        max_size = 10 * 1024 * 1024
-        if value.size > max_size:
-            raise serializers.ValidationError('文件大小不能超过10MB')
+        # 验证文件类型和大小
+        from .validators import validate_document_file
+        validate_document_file(value)
         return value
 
