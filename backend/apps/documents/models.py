@@ -21,6 +21,7 @@ class DocumentType(models.Model):
     sort_order = models.IntegerField(default=0, verbose_name='排序')
     description = models.TextField(blank=True, null=True, verbose_name='说明')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     
     class Meta:
         db_table = 'document_types'
@@ -34,12 +35,12 @@ class DocumentType(models.Model):
 
 class Document(models.Model):
     """资料文档模型"""
-    
+
     class Status(models.TextChoices):
         PENDING = 'pending', '待审核'
         APPROVED = 'approved', '已通过'
         REJECTED = 'rejected', '已拒绝'
-    
+
     customer = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,
@@ -64,7 +65,7 @@ class Document(models.Model):
         default=Status.PENDING,
         verbose_name='状态'
     )
-    remarks = models.TextField(blank=True, null=True, verbose_name='备注')
+    notes = models.TextField(blank=True, null=True, verbose_name='备注')
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -73,6 +74,7 @@ class Document(models.Model):
         verbose_name='上传人'
     )
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name='上传时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     
     class Meta:
         db_table = 'documents'

@@ -13,7 +13,7 @@ class CustomerAdmin(admin.ModelAdmin):
             'fields': ('name', 'id_card', 'phone', 'address')
         }),
         ('状态信息', {
-            'fields': ('status', 'remarks')
+            'fields': ('status',)
         }),
         ('系统信息', {
             'fields': ('created_by', 'created_at', 'updated_at')

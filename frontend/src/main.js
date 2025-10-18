@@ -9,13 +9,15 @@ import { isMobile } from './utils/device'
 const app = createApp(App)
 const pinia = createPinia()
 
-if (isMobile()) {
-  // 移动端使用 Vant
-  import('vant/lib/index.css')
-  import('@vant/touch-emulator') // PC端模拟移动端touch事件
+// 初始化应用
+async function initApp() {
+  if (isMobile()) {
+    // 移动端使用 Vant
+    await import('vant/lib/index.css')
+    await import('@vant/touch-emulator') // PC端模拟移动端touch事件
 
-  // 按需引入Vant组件
-  import('vant').then((Vant) => {
+    // 按需引入Vant组件
+    const Vant = await import('vant')
     app.use(Vant.Button)
     app.use(Vant.Form)
     app.use(Vant.Field)
@@ -39,16 +41,17 @@ if (isMobile()) {
     app.use(Vant.Overlay)
     app.use(Vant.PullRefresh)
     app.use(Vant.Divider)
-  })
-} else {
-  // PC端使用 Element Plus
-  import('element-plus/dist/index.css')
-  import('element-plus').then((ElementPlus) => {
+  } else {
+    // PC端使用 Element Plus
+    await import('element-plus/dist/index.css')
+    const ElementPlus = await import('element-plus')
     app.use(ElementPlus.default)
-  })
+  }
+
+  app.use(pinia)
+  app.use(router)
+  app.mount('#app')
 }
 
-app.use(pinia)
-app.use(router)
-app.mount('#app')
+initApp()
 

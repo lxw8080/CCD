@@ -22,7 +22,6 @@ class Customer(models.Model):
         default=Status.PENDING,
         verbose_name='状态'
     )
-    remarks = models.TextField(blank=True, null=True, verbose_name='备注')
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

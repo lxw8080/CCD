@@ -18,15 +18,15 @@ class DocumentSerializer(serializers.ModelSerializer):
     document_type_name = serializers.CharField(source='document_type.name', read_only=True)
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     file_url = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Document
         fields = [
             'id', 'customer', 'customer_name', 'document_type', 'document_type_name',
-            'file', 'file_url', 'file_name', 'file_size', 'status', 'remarks',
-            'uploaded_by', 'uploaded_by_info', 'uploaded_at'
+            'file', 'file_url', 'file_name', 'file_size', 'status', 'notes',
+            'uploaded_by', 'uploaded_by_info', 'uploaded_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'uploaded_by', 'uploaded_at', 'file_size']
+        read_only_fields = ['id', 'uploaded_by', 'uploaded_at', 'updated_at', 'file_size']
     
     def get_file_url(self, obj):
         request = self.context.get('request')
@@ -47,7 +47,6 @@ class DocumentUploadSerializer(serializers.Serializer):
     customer = serializers.IntegerField(required=True)
     document_type = serializers.IntegerField(required=True)
     file = serializers.ImageField(required=True)
-    remarks = serializers.CharField(required=False, allow_blank=True)
     
     def validate_file(self, value):
         # 限制文件大小为10MB

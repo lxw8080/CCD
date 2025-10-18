@@ -67,7 +67,6 @@ def upload_document(request):
         customer=customer,
         document_type=doc_type,
         file=serializer.validated_data['file'],
-        remarks=serializer.validated_data.get('remarks', ''),
         uploaded_by=request.user
     )
     

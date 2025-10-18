@@ -93,7 +93,9 @@ const statusOptions = [
 const statusMap = {
   pending: { text: '收集中', type: 'default' },
   complete: { text: '已齐全', type: 'success' },
+  completed: { text: '已齐全', type: 'success' }, // 兼容数据库中的 completed
   reviewing: { text: '审核中', type: 'warning' },
+  in_progress: { text: '审核中', type: 'warning' }, // 兼容数据库中的 in_progress
   approved: { text: '已通过', type: 'success' },
   rejected: { text: '已拒绝', type: 'danger' }
 }

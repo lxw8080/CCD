@@ -27,7 +27,7 @@ class DocumentAdmin(admin.ModelAdmin):
             'fields': ('file', 'file_name', 'file_size')
         }),
         ('状态信息', {
-            'fields': ('status', 'remarks')
+            'fields': ('status',)
         }),
         ('系统信息', {
             'fields': ('uploaded_by', 'uploaded_at')
