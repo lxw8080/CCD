@@ -13,6 +13,7 @@
     <!-- 视频预览 -->
     <div v-else-if="isVideoFile" class="preview-container">
       <video
+        ref="videoPlayer"
         :src="fileUrl"
         controls
         style="max-width: 100%; max-height: 600px"
@@ -71,6 +72,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+const videoPlayer = ref(null)
 const pdfCanvas = ref(null)
 const currentPage = ref(1)
 const totalPages = ref(0)
@@ -88,6 +90,11 @@ const isVideoFile = computed(() => isVideo(props.fileType))
 const isPdfFile = computed(() => isPdf(props.fileType))
 
 const handleClose = () => {
+  // 停止视频播放
+  if (videoPlayer.value) {
+    videoPlayer.value.pause()
+    videoPlayer.value.currentTime = 0
+  }
   visible.value = false
 }
 
