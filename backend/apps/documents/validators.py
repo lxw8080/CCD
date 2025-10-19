@@ -26,6 +26,9 @@ ALLOWED_MIME_TYPES = {
         'video/3gpp',
         'video/3gpp2',
         'video/webm',
+        'video/mpeg',
+        'video/mp2t',
+        'video/ogg',
     },
     'pdf': {
         'application/pdf',
@@ -111,8 +114,11 @@ def validate_file_type(file):
 
 
 def validate_file_size(file, file_type):
-    """验证文件大小"""
-    max_size = FILE_SIZE_LIMITS.get(file_type, 10 * 1024 * 1024)
+    """验证文件大小（当前无大小限制）"""
+    max_size = FILE_SIZE_LIMITS.get(file_type)
+
+    if not max_size:
+        return
 
     if file.size > max_size:
         max_size_mb = max_size / (1024 * 1024)

@@ -220,7 +220,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerCompleteness } from '@/api/customer'
 import { getDocumentTypes, getDocuments, uploadDocument, deleteDocument } from '@/api/document'
-import { compressImage, formatFileSize } from '@/utils/image'
+import { formatFileSize } from '@/utils/image'
 import { getFileType, getFileTypeName, getAcceptAttribute, isImage } from '@/utils/fileType'
 import { PreviewDialog } from '@/components/FilePreview'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -439,10 +439,7 @@ const handleUpload = async () => {
       const fileType = getFileType(file.name)
 
       // 如果是图片，进行压缩
-      let uploadFile = file.raw
-      if (isImage(fileType)) {
-        uploadFile = await compressImage(file.raw)
-      }
+      const uploadFile = file.raw
 
       formData.append('customer', route.params.id)
       formData.append('document_type', uploadForm.documentType)

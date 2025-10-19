@@ -1,3 +1,13 @@
+if (typeof URL !== "undefined" && typeof URL.parse !== "function") {
+  URL.parse = function (input, base) {
+    try {
+      return base ? new URL(input, base) : new URL(input);
+    } catch (error) {
+      return null;
+    }
+  };
+}
+
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page

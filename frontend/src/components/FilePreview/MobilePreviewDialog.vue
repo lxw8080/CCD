@@ -25,6 +25,7 @@
         webkit-playsinline
         x5-playsinline
         preload="metadata"
+        ref="videoElement"
         style="width: 100%; height: auto; max-height: 80vh; background: #000;"
       />
     </div>
@@ -120,6 +121,23 @@ const previewIndex = ref(0)
 // 视频预览
 const videoPreviewVisible = ref(false)
 const videoUrl = ref('')
+const videoElement = ref(null)
+
+const stopVideoPlayback = () => {
+  try {
+    const el = videoElement.value
+    if (el) {
+      el.pause()
+      el.currentTime = 0
+      el.removeAttribute('src')
+      el.load()
+    }
+  } catch (error) {
+    console.warn('stopVideoPlayback failed:', error)
+  } finally {
+    videoUrl.value = ''
+  }
+}
 
 // PDF 预览
 const pdfPreviewVisible = ref(false)
@@ -169,6 +187,7 @@ const handleChildClose = () => {
 }
 
 const closeVideoPreview = () => {
+  stopVideoPlayback()
   videoPreviewVisible.value = false
   handleChildClose()
 }
@@ -277,8 +296,11 @@ watch(imagePreviewVisible, (val) => {
 })
 
 watch(videoPreviewVisible, (val) => {
-  if (!val && visible.value) {
-    handleChildClose()
+  if (!val) {
+    stopVideoPlayback()
+    if (visible.value) {
+      handleChildClose()
+    }
   }
 })
 

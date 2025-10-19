@@ -87,6 +87,7 @@
             v-model="fileList"
             :max-count="10"
             multiple
+            :before-read="beforeRead"
             :after-read="afterRead"
             :before-delete="beforeDelete"
             :accept="uploaderAccept"
@@ -115,7 +116,7 @@
             round
             :loading="uploadLoading"
             :disabled="!uploadForm.documentType || fileList.length === 0 || !canUpload"
-            @click="handleUpload"
+            @click="handleUpload($event)"
             style="margin-top: 16px;"
           >
             上传
@@ -179,7 +180,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerCompleteness } from '@/api/customer'
 import { getDocumentTypes, getDocuments, uploadDocument, deleteDocument } from '@/api/document'
@@ -209,6 +210,135 @@ const previewFileType = ref('image')
 const uploadForm = reactive({
   documentType: null
 })
+
+const getDisplayFileName = (file) => file?.name || '未命名文件'
+
+
+const uploaderLogPrefix = '[MobileUploader]'
+const isIOSDevice = typeof window !== 'undefined' && /iP(ad|hone|od)/i.test((window.navigator?.userAgent) || '')
+const isSafari = typeof window !== 'undefined' ? /^((?!chrome|android).)*safari/i.test(window.navigator?.userAgent || '') : false
+let globalErrorToastTimer = null
+
+
+const logDebug = (...args) => {
+  if (typeof console !== 'undefined' && console.log) {
+    console.log(uploaderLogPrefix, ...args)
+  }
+}
+
+const logError = (...args) => {
+  if (typeof console !== 'undefined' && console.error) {
+    console.error(uploaderLogPrefix, ...args)
+  }
+}
+
+const cleanupCallbacks = []
+
+const getFileSnapshot = (file) => {
+  if (!file) return null
+  return {
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    lastModified: file.lastModified,
+    constructor: file.constructor?.name
+  }
+}
+
+const formatUploadErrorMessage = (error, fallback = '上传失败') => {
+  try {
+    if (!error) return fallback
+
+    const status = error.response?.status
+    const statusText = error.response?.statusText
+    const backendMessage = error.response?.data?.error || error.response?.data?.detail
+    const networkMessage = error.message
+
+    if (backendMessage) {
+      return `${fallback}：${backendMessage}`
+    }
+
+    if (status) {
+      return `${fallback}（HTTP ${status}${statusText ? ` ${statusText}` : ''}）`
+    }
+
+    if (networkMessage) {
+      return `${fallback}：${networkMessage}`
+    }
+  } catch (formatError) {
+    logError('formatUploadErrorMessage failed', formatError)
+  }
+
+  return fallback
+}
+
+const unwrapRawFile = (item) => {
+  if (!item) return null
+  if (item instanceof File) return item
+  if (item.file instanceof File) return item.file
+  return item.file || null
+}
+
+const detectFileType = (file) => {
+  if (!file) return null
+  try {
+    const snapshot = getFileSnapshot(file)
+    logDebug('detectFileType invoked', { snapshot })
+    const detected = getFileTypeFromFile(file) || getFileType(file.name)
+    logDebug('detectFileType result', { detected, snapshot })
+    return detected
+  } catch (error) {
+    logError('detectFileType failed', error)
+    try {
+      return getFileType(file.name)
+    } catch (fallbackError) {
+      logError('detectFileType fallback failed', fallbackError)
+      return null
+    }
+  }
+}
+
+const formatAllowedTypeNames = (types = []) => {
+  if (!Array.isArray(types) || types.length === 0) {
+    return ''
+  }
+  return types.map(type => getFileTypeName(type) || type).join('、')
+}
+
+const getFileValidationError = (rawFile, docType) => {
+  if (!rawFile) {
+    return '无法读取所选文件，请重新选择'
+  }
+
+  const fileType = detectFileType(rawFile)
+  if (!fileType) {
+    return `不支持的文件类型：${getDisplayFileName(rawFile)}`
+  }
+
+  const allowed = docType?.allowed_file_types
+  if (Array.isArray(allowed) && allowed.length > 0 && !allowed.includes(fileType)) {
+    const allowedText = formatAllowedTypeNames(allowed)
+    return `${getDisplayFileName(rawFile)} 类型不符合要求（需上传 ${allowedText}）`
+  }
+
+  const sizeLimit = getFileSizeLimit(fileType)
+  if (Number.isFinite(sizeLimit) && rawFile.size > sizeLimit) {
+    return `${getDisplayFileName(rawFile)} 文件大小超过限制（最大 ${formatFileSizeLimit(fileType)}）`
+  }
+
+  return null
+}
+
+const removePendingItemWithDelay = async (target) => {
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const beforeLength = fileList.value.length
+    fileList.value = fileList.value.filter(item => item !== target)
+    logDebug('removePendingItemWithDelay', { beforeLength, afterLength: fileList.value.length })
+  } catch (error) {
+    logError('removePendingItemWithDelay failed', error)
+  }
+}
 
 const typeColumns = computed(() => {
   return documentTypes.value.map(type => ({
@@ -252,7 +382,7 @@ const uploaderAccept = computed(() => {
   const docType = currentDocumentType.value
   if (!docType || !docType.allowed_file_types || docType.allowed_file_types.length === 0) {
     // 如果没有设置限制，允许所有文件类型
-    return 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx'
+    return 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.rtf,.csv,.mp4,.mov,.avi,.wmv,.flv,.mkv,.m4v,.3gp,.3gpp,.webm,.ts,.mpg,.mpeg,.ogg'
   }
 
   const accepts = []
@@ -260,7 +390,7 @@ const uploaderAccept = computed(() => {
     accepts.push('image/*')
   }
   if (docType.allowed_file_types.includes('video')) {
-    accepts.push('video/*')
+    accepts.push('.mp4', '.mov', '.avi', '.wmv', '.flv', '.mkv', '.m4v', '.3gp', '.3gpp', '.webm', '.ts', '.mpg', '.mpeg', '.ogg')
   }
   if (docType.allowed_file_types.includes('pdf')) {
     accepts.push('.pdf')
@@ -275,24 +405,35 @@ const uploaderAccept = computed(() => {
   return accepts.join(',')
 })
 
-// 动态生成 capture 属性（根据资料类型设置摄像头模式）
 const uploaderCapture = computed(() => {
   const docType = currentDocumentType.value
-  if (!docType || !docType.allowed_file_types) {
-    return 'environment' // 默认使用后置摄像头
+  const allowed = docType?.allowed_file_types
+
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    logDebug('uploaderCapture fallback: unrestricted types', { isiOS: isIOSDevice })
+    return undefined
   }
 
-  // 如果只允许视频，使用视频录制
-  if (docType.allowed_file_types.length === 1 && docType.allowed_file_types[0] === 'video') {
-    return 'camcorder' // 视频录制
+  const onlyImages = allowed.every(type => type === 'image')
+  if (onlyImages) {
+    const captureMode = isIOSDevice ? 'environment' : 'environment'
+    logDebug('uploaderCapture image only', { captureMode, isiOS: isIOSDevice })
+    return captureMode
   }
 
-  // 如果允许图片，使用相机拍照
-  if (docType.allowed_file_types.includes('image')) {
-    return 'environment' // 后置摄像头
+  const onlyVideo = allowed.length > 0 && allowed.every(type => type === 'video')
+  if (onlyVideo) {
+    logDebug('uploaderCapture disabled for video only types', { allowed, isiOS: isIOSDevice })
+    return undefined
   }
 
-  // 其他情况不使用 capture（允许从文件管理器选择）
+  const imageAndVideo = allowed.every(type => type === 'image' || type === 'video')
+  if (imageAndVideo) {
+    logDebug('uploaderCapture disabled for image & video combo', { allowed, isiOS: isIOSDevice })
+    return undefined
+  }
+
+  logDebug('uploaderCapture disabled for unsupported mix', { allowed })
   return undefined
 })
 
@@ -374,56 +515,110 @@ const onTypeConfirm = ({ selectedOptions }) => {
   showTypePicker.value = false
 }
 
-const afterRead = (file) => {
-  // 统一为数组处理，兼容多选/单选
-  const items = Array.isArray(file) ? file : [file]
+const beforeRead = (file) => {
+  logDebug('beforeRead triggered', { isiOS: isIOSDevice })
+  try {
+    const items = Array.isArray(file) ? file : [file]
+    logDebug('beforeRead received items', { count: items.length, fileSnapshots: items.map(it => getFileSnapshot(unwrapRawFile(it) || it.file)) })
 
-  for (const item of items) {
-    // 验证是否选择了资料类型
     if (!uploadForm.documentType) {
-      showToast('请先选择资料类型')
-      // 移除该文件
-      fileList.value = fileList.value.filter(x => x !== item)
-      continue
+      showToast("请选择资料类型后再上传")
+      return false
     }
 
     const docType = currentDocumentType.value
     if (!docType) {
-      showToast('资料类型不存在')
-      fileList.value = fileList.value.filter(x => x !== item)
-      continue
+      showToast("资料类型不存在或已被删除")
+      return false
     }
 
-    // 获取文件类型：优先文件名，其次 MIME（兼容相机拍摄视频/某些浏览器无扩展名的情况）
-    let fileType = getFileTypeFromFile(item.file)
-    if (!fileType) {
-      showToast(`不支持的文件类型: ${item.file?.name || '未知文件'}`)
-      fileList.value = fileList.value.filter(x => x !== item)
-      continue
+    if (!canUpload.value) {
+      showToast("已达到最大文件数限制")
+      return false
     }
 
-    // 检查文件类型是否被允许
-    if (docType.allowed_file_types && docType.allowed_file_types.length > 0) {
-      if (!docType.allowed_file_types.includes(fileType)) {
-        showToast(`不支持上传 ${getFileTypeName(fileType)} 文件`)
-        fileList.value = fileList.value.filter(x => x !== item)
-
-
-        continue
+    const pendingCount = fileList.value.length
+    const maxCount = docType.max_file_count || 0
+    if (maxCount > 0) {
+      const remaining = maxCount - uploadedCount.value - pendingCount
+      if (remaining <= 0) {
+        showToast("已达到最大文件数限制")
+        return false
+      }
+      if (items.length > remaining) {
+        showToast(`最多还能选择 ${remaining} 个文件`)
+        return false
       }
     }
 
-    // 检查文件大小
-    const sizeLimit = getFileSizeLimit(fileType)
-    if (item.file.size > sizeLimit) {
-      showToast(`${item.file.name} 文件大小超过限制 (最大 ${formatFileSizeLimit(fileType)})`)
-      fileList.value = fileList.value.filter(x => x !== item)
-      continue
+    for (const item of items) {
+      const rawFile = unwrapRawFile(item)
+      const errorMessage = getFileValidationError(rawFile, docType)
+      if (errorMessage) {
+        logDebug('beforeRead validation failed', { errorMessage, snapshot: getFileSnapshot(rawFile) })
+        showToast(errorMessage)
+        return false
+      }
     }
 
-    console.log('文件验证通过:', item.file.name, '类型:', fileType)
+    logDebug('beforeRead validation passed')
+    return true
+  } catch (error) {
+    logError('beforeRead encountered error', error)
+    showToast(`处理文件选择时出错：${error?.message || error}`)
+    return false
   }
 }
+
+const afterRead = async (file) => {
+  logDebug('afterRead invoked', { isiOS: isIOSDevice })
+  const items = Array.isArray(file) ? file : [file]
+  logDebug('afterRead received items', { count: items.length, fileSnapshots: items.map(it => getFileSnapshot(unwrapRawFile(it) || it.file)) })
+
+  try {
+    if (!uploadForm.documentType) {
+      showToast("请选择资料类型后再上传")
+      await Promise.all(items.map(item => removePendingItemWithDelay(item)))
+      return
+    }
+
+    const docType = currentDocumentType.value
+    if (!docType) {
+      showToast("资料类型不存在或已被删除")
+      await Promise.all(items.map(item => removePendingItemWithDelay(item)))
+      return
+    }
+
+    if (!canUpload.value) {
+      showToast("已达到最大文件数限制")
+      await Promise.all(items.map(item => removePendingItemWithDelay(item)))
+      return
+    }
+
+    for (const item of items) {
+      try {
+        const rawFile = unwrapRawFile(item)
+        const errorMessage = getFileValidationError(rawFile, docType)
+        if (errorMessage) {
+          logDebug('afterRead validation failed', { errorMessage, snapshot: getFileSnapshot(rawFile) })
+          showToast(errorMessage)
+          await removePendingItemWithDelay(item)
+          continue
+        }
+
+        ensurePreviewMeta(item)
+        logDebug('afterRead preview metadata ensured', { snapshot: getFileSnapshot(rawFile) })
+      } catch (innerError) {
+        logError('afterRead inner loop error', innerError)
+        showToast(`处理文件时出错：${innerError?.message || innerError}`)
+      }
+    }
+  } catch (error) {
+    logError('afterRead top-level error', error)
+    showToast(`处理文件时出错：${error?.message || error}`)
+  }
+}
+
 
 const beforeDelete = (item) => {
   try {
@@ -440,19 +635,24 @@ const beforeDelete = (item) => {
 const ensurePreviewMeta = (item) => {
   try {
     if (!item) return
+    const rawFile = unwrapRawFile(item) || item.file
+    logDebug('ensurePreviewMeta start', { hasPreviewUrl: !!item.previewUrl, snapshot: getFileSnapshot(rawFile) })
     if (!item.previewUrl) {
       if (item.content) {
         // Vant Uploader base64 预览
         item.previewUrl = item.content
       } else if (item.file instanceof File) {
         item.previewUrl = URL.createObjectURL(item.file)
+      } else if (rawFile instanceof File) {
+        item.previewUrl = URL.createObjectURL(rawFile)
       }
     }
     if (!item.previewType) {
-      item.previewType = getFileTypeFromFile(item.file) || 'image'
+      item.previewType = getFileTypeFromFile(item.file) || getFileTypeFromFile(rawFile) || 'image'
     }
+    logDebug('ensurePreviewMeta success', { hasPreviewUrl: !!item.previewUrl, previewType: item.previewType })
   } catch (e) {
-    console.warn('ensurePreviewMeta failed:', e)
+    logError('ensurePreviewMeta failed', e)
   }
 }
 
@@ -472,49 +672,65 @@ const previewSelected = (item) => {
 // 监听 fileList，自动为新选择的文件生成预览 URL，避免内存泄漏
 watch(fileList, (list) => {
   try {
-    (list || []).forEach(it => ensurePreviewMeta(it))
-  } catch (e) {}
+    const snapshots = (list || []).map(it => getFileSnapshot(unwrapRawFile(it) || it.file))
+    logDebug('fileList watcher triggered', { count: list?.length || 0, snapshots })
+    ;(list || []).forEach(it => ensurePreviewMeta(it))
+  } catch (e) {
+    logError('fileList watcher error', e)
+  }
 }, { deep: true })
 
 
-const handleUpload = async () => {
+const handleUpload = async (event) => {
+  try {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+  } catch (eventError) {
+    logError('handleUpload event normalization failed', eventError)
+  }
+
+  logDebug('handleUpload triggered', {
+    isiOS: isIOSDevice,
+    fileCount: fileList.value.length,
+    documentType: uploadForm.documentType
+  })
+
   if (!uploadForm.documentType) {
-    showToast('请选择资料类型')
+    showToast("请选择资料类型")
     return
   }
 
   if (fileList.value.length === 0) {
-    showToast('请选择要上传的文件')
+    showToast("请选择要上传的文件")
     return
   }
 
-  // 检查文件数量限制
   if (!canUpload.value) {
-    showToast('已达到最大文件数限制')
+    showToast("已达到最大文件数限制")
     return
   }
 
-  // 上传前再次验证所有文件
   const docType = currentDocumentType.value
-  for (const item of fileList.value) {
-    const fileType = getFileTypeFromFile(item.file)
-    if (!fileType) {
-      showToast(`不支持的文件类型: ${item.file?.name || '未知文件'}`)
-      return
-    }
+  if (!docType) {
+    showToast("资料类型不存在或已被删除")
+    return
+  }
 
-    // 检查文件类型是否被允许
-    if (docType.allowed_file_types && docType.allowed_file_types.length > 0) {
-      if (!docType.allowed_file_types.includes(fileType)) {
-        showToast(`${item.file.name} 文件类型不符合要求`)
+  const pendingUploads = []
+  for (const item of fileList.value) {
+    const rawFile = unwrapRawFile(item) || item.file
+    const snapshot = getFileSnapshot(rawFile)
+    try {
+      const errorMessage = getFileValidationError(rawFile, docType)
+      if (errorMessage) {
+        logDebug('handleUpload validation failed', { errorMessage, snapshot })
+        showToast(errorMessage)
         return
       }
-    }
-
-    // 检查文件大小
-    const sizeLimit = getFileSizeLimit(fileType)
-    if (item.file.size > sizeLimit) {
-      showToast(`${item.file.name} 文件大小超过限制 (最大 ${formatFileSizeLimit(fileType)})`)
+      pendingUploads.push(rawFile)
+    } catch (validationError) {
+      logError('handleUpload validation error', validationError, { snapshot })
+      showToast("校验文件时出错，请重试")
       return
     }
   }
@@ -522,46 +738,42 @@ const handleUpload = async () => {
   uploadLoading.value = true
 
   try {
-    // 上传每个文件
-    for (const item of fileList.value) {
+    for (const rawFile of pendingUploads) {
+      const snapshot = getFileSnapshot(rawFile)
+      logDebug('handleUpload uploading file', { snapshot })
       const formData = new FormData()
 
       formData.append('customer', route.params.id)
       formData.append('document_type', uploadForm.documentType)
-      formData.append('file', item.file)
+      formData.append('file', rawFile)
 
       await uploadDocument(formData)
     }
 
     showToast({ message: '上传成功', type: 'success' })
-    // 清理本地 blob URL，避免内存泄漏
     try {
       fileList.value.forEach(it => {
         if (it && typeof it.previewUrl === 'string' && it.previewUrl.startsWith('blob:')) {
           URL.revokeObjectURL(it.previewUrl)
         }
       })
-    } catch (e) {}
+    } catch (e) {
+      logError('handleUpload revokeObjectURL error', e)
+    }
     fileList.value = []
     uploadForm.documentType = null
 
-    // 刷新数据
     fetchDocuments()
     fetchCompleteness()
   } catch (error) {
-    // 检查是否是后端返回的验证错误
-    if (error.response?.data?.error) {
-      showToast(error.response.data.error)
-    } else if (error.message) {
-      showToast('上传失败: ' + error.message)
-    } else {
-      showToast('上传失败')
-    }
-    console.error('上传错误:', error)
+    logError('handleUpload failed', error)
+    const message = formatUploadErrorMessage(error, '上传失败')
+    showToast(message)
   } finally {
     uploadLoading.value = false
   }
 }
+
 
 const handlePreview = (doc) => {
   previewUrl.value = doc.file_url
@@ -612,10 +824,64 @@ const handleBack = () => {
 }
 
 onMounted(() => {
+  logDebug('MobileCustomerDetail mounted', { isiOS: isIOSDevice, isSafari })
+  if (typeof window !== 'undefined') {
+    const errorHandler = (event) => {
+      logError('Global window error', {
+        message: event?.message,
+        filename: event?.filename,
+        lineno: event?.lineno,
+        colno: event?.colno,
+        error: event?.error
+      })
+      if (!globalErrorToastTimer) {
+        showToast(`页面发生错误：${event?.message || '未知错误'}`)
+        globalErrorToastTimer = setTimeout(() => {
+          globalErrorToastTimer = null
+        }, 2000)
+      }
+    }
+
+    const rejectionHandler = (event) => {
+      logError('Unhandled promise rejection', {
+        reason: event?.reason
+      })
+      if (!globalErrorToastTimer) {
+        const message = typeof event?.reason?.message === 'string' ? event.reason.message : (event?.reason || '未知错误')
+        showToast(`请求处理异常：${message}`)
+        globalErrorToastTimer = setTimeout(() => {
+          globalErrorToastTimer = null
+        }, 2000)
+      }
+    }
+
+    window.addEventListener('error', errorHandler)
+    window.addEventListener('unhandledrejection', rejectionHandler)
+
+    cleanupCallbacks.push(() => {
+      window.removeEventListener('error', errorHandler)
+      window.removeEventListener('unhandledrejection', rejectionHandler)
+      if (globalErrorToastTimer) {
+        clearTimeout(globalErrorToastTimer)
+        globalErrorToastTimer = null
+      }
+    })
+  }
   fetchCustomerDetail()
   fetchCompleteness()
   fetchDocumentTypes()
   fetchDocuments()
+})
+
+onBeforeUnmount(() => {
+  cleanupCallbacks.forEach(cb => {
+    try {
+      cb()
+    } catch (error) {
+      logError('cleanup callback failed', error)
+    }
+  })
+  cleanupCallbacks.length = 0
 })
 </script>
 
@@ -634,4 +900,3 @@ onMounted(() => {
   margin-top: 12px;
 }
 </style>
-

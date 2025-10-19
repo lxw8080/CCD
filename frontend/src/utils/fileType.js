@@ -12,9 +12,23 @@ export const FILE_TYPES = {
   },
   video: {
     name: '视频',
-    extensions: ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'],
+    extensions: ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp', '3gpp', 'webm', 'ts', 'mpg', 'mpeg', 'ogg'],
     icon: 'el-icon-video-play',
-    mimeTypes: ['video/mp4', 'video/x-msvideo', 'video/quicktime', 'video/x-ms-wmv', 'video/x-flv', 'video/x-matroska']
+    mimeTypes: [
+      'video/mp4',
+      'video/x-msvideo',
+      'video/quicktime',
+      'video/x-ms-wmv',
+      'video/x-flv',
+      'video/x-matroska',
+      'video/mpeg',
+      'video/mp2t',
+      'video/3gpp',
+      'video/3gpp2',
+      'video/webm',
+      'video/ogg',
+      'application/octet-stream'
+    ]
   },
   pdf: {
     name: 'PDF',
@@ -113,11 +127,19 @@ export function getAcceptAttribute() {
  */
 export function getFileTypeByMime(mime) {
   if (!mime) return null
+  const normalized = mime.split(';')[0].trim().toLowerCase()
   for (const [type, config] of Object.entries(FILE_TYPES)) {
-    if (config.mimeTypes && config.mimeTypes.includes(mime)) {
+    if (config.mimeTypes && config.mimeTypes.includes(normalized)) {
       return type
     }
   }
+
+  if (normalized.startsWith('image/')) return 'image'
+  if (normalized.startsWith('video/')) return 'video'
+  if (normalized === 'application/pdf') return 'pdf'
+  if (normalized.startsWith('text/')) return 'document'
+  if (normalized.includes('sheet') || normalized.includes('excel') || normalized === 'text/csv') return 'spreadsheet'
+
   return null
 }
 
@@ -195,13 +217,14 @@ export function isSupportedPreview(fileType) {
  */
 export function getFileSizeLimit(fileType) {
   const limits = {
-    image: 5 * 1024 * 1024,      // 5MB
-    video: 50 * 1024 * 1024,     // 50MB
-    pdf: 10 * 1024 * 1024,       // 10MB
-    document: 10 * 1024 * 1024,  // 10MB
-    spreadsheet: 10 * 1024 * 1024 // 10MB
+    image: Number.POSITIVE_INFINITY,
+    video: Number.POSITIVE_INFINITY,
+    pdf: Number.POSITIVE_INFINITY,
+    document: Number.POSITIVE_INFINITY,
+    spreadsheet: Number.POSITIVE_INFINITY
   }
-  return limits[fileType] || 10 * 1024 * 1024
+  const limit = limits[fileType]
+  return typeof limit === 'number' ? limit : Number.POSITIVE_INFINITY
 }
 
 /**
@@ -211,6 +234,8 @@ export function getFileSizeLimit(fileType) {
  */
 export function formatFileSizeLimit(fileType) {
   const limit = getFileSizeLimit(fileType)
+  if (!Number.isFinite(limit)) {
+    return '无限制'
+  }
   return `${limit / (1024 * 1024)}MB`
 }
-

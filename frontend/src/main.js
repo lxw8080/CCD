@@ -6,6 +6,16 @@ import App from './App.vue'
 // 根据设备类型引入不同的UI库
 import { isMobile } from './utils/device'
 
+if (typeof window !== 'undefined' && typeof window.URL !== 'undefined' && typeof window.URL.parse !== 'function') {
+  window.URL.parse = (input, base) => {
+    try {
+      return base ? new window.URL(input, base) : new window.URL(input)
+    } catch (error) {
+      return null
+    }
+  }
+}
+
 const app = createApp(App)
 const pinia = createPinia()
 

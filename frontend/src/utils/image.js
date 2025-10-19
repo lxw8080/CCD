@@ -1,54 +1,34 @@
-import Compressor from 'compressorjs'
-
 /**
- * 压缩图片
- * @param {File} file - 原始文件
- * @param {Object} options - 压缩选项
- * @returns {Promise<File>}
+ * 上传工具：保留旧接口但不进行压缩，确保返回原始文件。
  */
-export function compressImage(file, options = {}) {
-  return new Promise((resolve, reject) => {
-    new Compressor(file, {
-      quality: options.quality || 0.8,
-      maxWidth: options.maxWidth || 1920,
-      maxHeight: options.maxHeight || 1920,
-      mimeType: options.mimeType || 'image/jpeg',
-      success(result) {
-        // 将Blob转换为File对象
-        const compressedFile = new File([result], file.name, {
-          type: result.type,
-          lastModified: Date.now()
-        })
-        resolve(compressedFile)
-      },
-      error(err) {
-        reject(err)
-      }
-    })
-  })
+
+export function compressImage(file) {
+  return Promise.resolve(file)
 }
 
-/**
- * 批量压缩图片
- * @param {File[]} files - 文件数组
- * @param {Object} options - 压缩选项
- * @returns {Promise<File[]>}
- */
-export async function compressImages(files, options = {}) {
-  const promises = files.map(file => compressImage(file, options))
-  return Promise.all(promises)
+export function compressImages(files) {
+  if (!Array.isArray(files)) {
+    return Promise.resolve([])
+  }
+  return Promise.all(files.map((file) => compressImage(file)))
 }
 
-/**
- * 格式化文件大小
- * @param {number} bytes - 字节数
- * @returns {string}
- */
-export function formatFileSize(bytes) {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
-}
+export function formatFileSize(size) {
+  if (!Number.isFinite(size)) {
+    return '0 B'
+  }
 
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`
+  }
+
+  if (size >= 1024) {
+    return `${(size / 1024).toFixed(2)} KB`
+  }
+
+  if (size > 0) {
+    return `${size} B`
+  }
+
+  return '0 B'
+}

@@ -17,19 +17,19 @@ FILE_TYPE_CHOICES = [
 # 支持的文件扩展名
 ALLOWED_EXTENSIONS = {
     'image': ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
-    'video': ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'],
+    'video': ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp', '3gpp', 'webm', 'ts', 'mpg', 'mpeg', 'ogg'],
     'pdf': ['pdf'],
     'document': ['doc', 'docx', 'txt', 'rtf'],
     'spreadsheet': ['xls', 'xlsx', 'csv']
 }
 
-# 文件大小限制（字节）
+# 文件大小限制（字节）- 统一取消限制，保留结构便于后续扩展
 FILE_SIZE_LIMITS = {
-    'image': 5 * 1024 * 1024,      # 5MB
-    'video': 50 * 1024 * 1024,     # 50MB
-    'pdf': 10 * 1024 * 1024,       # 10MB
-    'document': 10 * 1024 * 1024,  # 10MB
-    'spreadsheet': 10 * 1024 * 1024  # 10MB
+    'image': None,
+    'video': None,
+    'pdf': None,
+    'document': None,
+    'spreadsheet': None,
 }
 
 
