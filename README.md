@@ -62,6 +62,22 @@
 - 移动端：卡片列表 + 优化的操作界面
 - 自动适配不同设备
 
+## 📚 文档导航
+
+### 快速链接
+- **[快速开始指南](QUICK_START.md)** - 快速搭建开发环境
+- **[完整用户手册](docs/guides/USER_GUIDE.md)** - 系统使用指南
+- **[文档中心](docs/README.md)** - 所有文档的导航
+- **[更新日志](CHANGELOG.md)** - 版本历史
+- **[项目结构](PROJECT_STRUCTURE.md)** - 代码结构说明
+
+### 按角色查找
+- **用户**: [用户使用指南](docs/guides/USER_GUIDE.md)
+- **开发者**: [后端文档](backend/README.md) | [前端文档](frontend/README.md)
+- **运维**: [部署文档](deployment/README.md)
+
+---
+
 ## 快速开始
 
 ### 环境要求
