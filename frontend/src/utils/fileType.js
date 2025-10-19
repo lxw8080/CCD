@@ -216,12 +216,15 @@ export function isSupportedPreview(fileType) {
  * @returns {number} - 文件大小限制
  */
 export function getFileSizeLimit(fileType) {
+  // 合理的默认上限（可按需再调整）：
+  // image: 10MB, video: 500MB, pdf: 50MB, document: 20MB, spreadsheet: 20MB
+  const MB = 1024 * 1024
   const limits = {
-    image: Number.POSITIVE_INFINITY,
-    video: Number.POSITIVE_INFINITY,
-    pdf: Number.POSITIVE_INFINITY,
-    document: Number.POSITIVE_INFINITY,
-    spreadsheet: Number.POSITIVE_INFINITY
+    image: 10 * MB,
+    video: 500 * MB,
+    pdf: 50 * MB,
+    document: 20 * MB,
+    spreadsheet: 20 * MB
   }
   const limit = limits[fileType]
   return typeof limit === 'number' ? limit : Number.POSITIVE_INFINITY
@@ -237,5 +240,9 @@ export function formatFileSizeLimit(fileType) {
   if (!Number.isFinite(limit)) {
     return '无限制'
   }
-  return `${limit / (1024 * 1024)}MB`
+  const MB = 1024 * 1024
+  if (limit % MB === 0) {
+    return `${limit / MB}MB`
+  }
+  return `${(limit / MB).toFixed(1)}MB`
 }

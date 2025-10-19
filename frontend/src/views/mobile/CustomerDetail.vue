@@ -92,6 +92,13 @@
             :before-delete="beforeDelete"
             :accept="uploaderAccept"
             :capture="uploaderCapture"
+            :upload-text="''"
+            :preview-full-image="false"
+            :preview-image="false"
+            result-type="file"
+            :max-size="uploaderMaxSize"
+            @oversize="handleOversize"
+            :show-upload="true"
           />
 
           <!-- 选择的文件（未上传）预览入口 -->
@@ -110,6 +117,22 @@
           </div>
 
 
+          <div v-if="fileList.length" style="margin-top: 8px;">
+            <div v-for="(item, idx) in fileList" :key="idx" style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+              <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#646566;font-size:12px;">
+                {{ getDisplayFileName(unwrapRawFile(item) || item.file) }}
+              </div>
+              <div v-if="perFileProgressMap.get(item) != null" style="width:120px;">
+                <van-progress :percentage="perFileProgressMap.get(item) || 0" stroke-width="6" />
+              </div>
+              <van-button v-if="uploading && perFileControllerMap.get(item)" size="mini" type="danger" @click="cancelSingleUpload(item)">取消</van-button>
+              <van-button v-else-if="perFileErrorMap.get(item)" size="mini" @click="retrySingle(item)">重试</van-button>
+            </div>
+            <div v-if="uploading" style="margin-top:6px;color:#909399;font-size:12px;">
+              总进度：{{ totalProgress }}%
+            </div>
+          </div>
+
           <van-button
             type="primary"
             block
@@ -120,6 +143,16 @@
             style="margin-top: 16px;"
           >
             上传
+          </van-button>
+          <van-button
+            v-if="uploading"
+            type="default"
+            block
+            round
+            @click="cancelAllUploads"
+            style="margin-top: 8px;"
+          >
+            取消全部
           </van-button>
           <div v-if="uploadForm.documentType && currentDocumentType" style="margin-top: 8px; font-size: 12px; color: #909399; text-align: center;">
             <div v-if="currentDocumentType.max_file_count === 0">无限制</div>
@@ -183,7 +216,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomer, getCustomerCompleteness } from '@/api/customer'
-import { getDocumentTypes, getDocuments, uploadDocument, deleteDocument } from '@/api/document'
+import { getDocumentTypes, getDocuments, uploadDocument, deleteDocument, batchUploadDocuments } from '@/api/document'
 import { formatFileSize } from '@/utils/image'
 import { getFileType, getFileTypeName, getFileSizeLimit, formatFileSizeLimit, getFileTypeFromFile } from '@/utils/fileType'
 import { showToast, showConfirmDialog } from 'vant'
@@ -201,6 +234,11 @@ const completeness = ref(null)
 const documentTypes = ref([])
 const documents = ref([])
 const fileList = ref([])
+const uploading = ref(false)
+const perFileProgressMap = ref(new Map())
+const perFileErrorMap = ref(new Map())
+const perFileControllerMap = ref(new Map())
+const totalProgress = ref(0)
 const showTypePicker = ref(false)
 const previewVisible = ref(false)
 const previewUrl = ref('')
@@ -216,7 +254,7 @@ const getDisplayFileName = (file) => file?.name || '未命名文件'
 
 const uploaderLogPrefix = '[MobileUploader]'
 const isIOSDevice = typeof window !== 'undefined' && /iP(ad|hone|od)/i.test((window.navigator?.userAgent) || '')
-const isSafari = typeof window !== 'undefined' ? /^((?!chrome|android).)*safari/i.test(window.navigator?.userAgent || '') : false
+const isSafari = typeof window !== 'undefined' ? /^((?!aachrome|android).)*safari/i.test(window.navigator?.userAgent || '') : false
 let globalErrorToastTimer = null
 
 
@@ -437,6 +475,24 @@ const uploaderCapture = computed(() => {
   return undefined
 })
 
+// 供 Uploader 进行初步拦截的大尺寸阈值（与 getFileSizeLimit 对齐的较大兜底值）
+const uploaderMaxSize = computed(() => {
+  // 默认给个较大的兜底 600MB，具体仍以 getFileSizeLimit 校验为准
+  return 600 * 1024 * 1024
+})
+
+const handleOversize = (file) => {
+  try {
+    const items = Array.isArray(file) ? file : [file]
+    const first = items[0]
+    const rawFile = unwrapRawFile(first) || first.file
+    const type = detectFileType(rawFile) || '文件'
+    showToast(`${getDisplayFileName(rawFile)} 过大，无法选择`)
+  } catch (_) {
+    showToast('文件过大，无法选择')
+  }
+}
+
 const statusMap = {
   pending: { text: '收集中', type: 'default' },
   complete: { text: '已齐全', type: 'success' },
@@ -638,13 +694,14 @@ const ensurePreviewMeta = (item) => {
     const rawFile = unwrapRawFile(item) || item.file
     logDebug('ensurePreviewMeta start', { hasPreviewUrl: !!item.previewUrl, snapshot: getFileSnapshot(rawFile) })
     if (!item.previewUrl) {
-      if (item.content) {
-        // Vant Uploader base64 预览
-        item.previewUrl = item.content
+      // 优先使用 objectURL，避免大图 base64 导致内存暴涨和页面重载
+      if (rawFile instanceof File) {
+        item.previewUrl = URL.createObjectURL(rawFile)
       } else if (item.file instanceof File) {
         item.previewUrl = URL.createObjectURL(item.file)
-      } else if (rawFile instanceof File) {
-        item.previewUrl = URL.createObjectURL(rawFile)
+      } else if (item.content) {
+        // 最后兜底才用 base64
+        item.previewUrl = item.content
       }
     }
     if (!item.previewType) {
@@ -695,6 +752,11 @@ const handleUpload = async (event) => {
     documentType: uploadForm.documentType
   })
 
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    showToast('当前网络不可用，无法上传')
+    return
+  }
+
   if (!uploadForm.documentType) {
     showToast("请选择资料类型")
     return
@@ -717,6 +779,10 @@ const handleUpload = async (event) => {
   }
 
   const pendingUploads = []
+  perFileProgressMap.value = new Map()
+  perFileErrorMap.value = new Map()
+  perFileControllerMap.value = new Map()
+  totalProgress.value = 0
   for (const item of fileList.value) {
     const rawFile = unwrapRawFile(item) || item.file
     const snapshot = getFileSnapshot(rawFile)
@@ -727,7 +793,7 @@ const handleUpload = async (event) => {
         showToast(errorMessage)
         return
       }
-      pendingUploads.push(rawFile)
+      pendingUploads.push({ item, rawFile })
     } catch (validationError) {
       logError('handleUpload validation error', validationError, { snapshot })
       showToast("校验文件时出错，请重试")
@@ -736,18 +802,80 @@ const handleUpload = async (event) => {
   }
 
   uploadLoading.value = true
+  uploading.value = true
 
   try {
-    for (const rawFile of pendingUploads) {
-      const snapshot = getFileSnapshot(rawFile)
-      logDebug('handleUpload uploading file', { snapshot })
+    // 优先尝试后端批量上传接口：files[]
+    if (pendingUploads.length > 1) {
       const formData = new FormData()
-
       formData.append('customer', route.params.id)
       formData.append('document_type', uploadForm.documentType)
-      formData.append('file', rawFile)
+      for (const { rawFile } of pendingUploads) {
+        formData.append('files', rawFile)
+      }
 
-      await uploadDocument(formData)
+      // 使用单一 AbortController 控制整批
+      const controller = new AbortController()
+
+      await batchUploadDocuments(formData, {
+        signal: controller.signal,
+        onUploadProgress: (e) => {
+          if (e && e.total) {
+            const percent = Math.floor((e.loaded / e.total) * 100)
+            totalProgress.value = percent
+          }
+        }
+      })
+    } else {
+      // 单文件上传，支持并发与进度。这里仍按串行但可轻松扩展成并发队列
+      const concurrency = 3
+      const queue = [...pendingUploads]
+      let active = 0
+      await new Promise((resolve, reject) => {
+        const next = () => {
+          if (queue.length === 0 && active === 0) return resolve()
+          while (active < concurrency && queue.length > 0) {
+            const { item, rawFile } = queue.shift()
+            active++
+            const snapshot = getFileSnapshot(rawFile)
+            logDebug('upload start', { snapshot })
+            const formData = new FormData()
+            formData.append('customer', route.params.id)
+            formData.append('document_type', uploadForm.documentType)
+            formData.append('file', rawFile)
+
+            const controller = new AbortController()
+            perFileControllerMap.value.set(item, controller)
+
+            uploadDocument(formData, {
+              signal: controller.signal,
+              onUploadProgress: (e) => {
+                try {
+                  if (!e || !e.total) return
+                  const percent = Math.min(100, Math.floor((e.loaded / e.total) * 100))
+                  perFileProgressMap.value.set(item, percent)
+                  // 估算总进度：各文件平均
+                  const percents = fileList.value.map(it => perFileProgressMap.value.get(it) || 0)
+                  totalProgress.value = Math.floor(percents.reduce((s, p) => s + p, 0) / Math.max(1, percents.length))
+                } catch (_) {}
+              }
+            }).then(() => {
+              perFileProgressMap.value.set(item, 100)
+            }).catch(err => {
+              perFileErrorMap.value.set(item, err)
+            }).finally(() => {
+              active--
+              next()
+            })
+          }
+        }
+        next()
+      })
+      // 如果有失败，提示但不整体报错
+      const failed = [...perFileErrorMap.value.values()].filter(Boolean)
+      if (failed.length > 0) {
+        showToast(`部分文件上传失败：${failed.length} 个`)
+      }
     }
 
     showToast({ message: '上传成功', type: 'success' })
@@ -771,6 +899,8 @@ const handleUpload = async (event) => {
     showToast(message)
   } finally {
     uploadLoading.value = false
+    uploading.value = false
+    perFileControllerMap.value.clear()
   }
 }
 
@@ -855,12 +985,23 @@ onMounted(() => {
       }
     }
 
+    const onlineHandler = () => {
+      try { showToast('网络已连接') } catch (_) {}
+    }
+    const offlineHandler = () => {
+      try { showToast('网络已断开') } catch (_) {}
+    }
+
     window.addEventListener('error', errorHandler)
     window.addEventListener('unhandledrejection', rejectionHandler)
+    window.addEventListener('online', onlineHandler)
+    window.addEventListener('offline', offlineHandler)
 
     cleanupCallbacks.push(() => {
       window.removeEventListener('error', errorHandler)
       window.removeEventListener('unhandledrejection', rejectionHandler)
+      window.removeEventListener('online', onlineHandler)
+      window.removeEventListener('offline', offlineHandler)
       if (globalErrorToastTimer) {
         clearTimeout(globalErrorToastTimer)
         globalErrorToastTimer = null
@@ -874,6 +1015,13 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  try {
+    // 组件卸载时取消所有在途上传
+    perFileControllerMap.value.forEach((controller) => {
+      try { controller.abort() } catch (_) {}
+    })
+    perFileControllerMap.value.clear()
+  } catch (_) {}
   cleanupCallbacks.forEach(cb => {
     try {
       cb()
@@ -883,6 +1031,58 @@ onBeforeUnmount(() => {
   })
   cleanupCallbacks.length = 0
 })
+
+// 取消单个文件上传
+const cancelSingleUpload = (item) => {
+  const controller = perFileControllerMap.value.get(item)
+  if (controller) {
+    try { controller.abort() } catch (_) {}
+    perFileControllerMap.value.delete(item)
+    perFileErrorMap.value.set(item, new Error('已取消'))
+  }
+}
+
+// 重试单个失败文件
+const retrySingle = async (item) => {
+  const rawFile = unwrapRawFile(item) || item.file
+  const docType = currentDocumentType.value
+  const errorMessage = getFileValidationError(rawFile, docType)
+  if (errorMessage) { showToast(errorMessage); return }
+  const controller = new AbortController()
+  perFileControllerMap.value.set(item, controller)
+  perFileErrorMap.value.delete(item)
+  perFileProgressMap.value.set(item, 0)
+  const formData = new FormData()
+  formData.append('customer', route.params.id)
+  formData.append('document_type', uploadForm.documentType)
+  formData.append('file', rawFile)
+  try {
+    await uploadDocument(formData, {
+      signal: controller.signal,
+      onUploadProgress: (e) => {
+        if (e && e.total) {
+          const percent = Math.floor((e.loaded / e.total) * 100)
+          perFileProgressMap.value.set(item, percent)
+        }
+      }
+    })
+    perFileProgressMap.value.set(item, 100)
+    showToast({ message: '重试成功', type: 'success' })
+  } catch (err) {
+    perFileErrorMap.value.set(item, err)
+    showToast('重试失败')
+  }
+}
+
+// 取消全部上传
+const cancelAllUploads = () => {
+  perFileControllerMap.value.forEach((controller, item) => {
+    try { controller.abort() } catch (_) {}
+    perFileErrorMap.value.set(item, new Error('已取消'))
+  })
+  perFileControllerMap.value.clear()
+  showToast('已取消全部上传')
+}
 </script>
 
 <style scoped>

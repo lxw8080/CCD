@@ -24,28 +24,32 @@ export function getDocuments(params) {
 /**
  * 上传资料
  */
-export function uploadDocument(data) {
+export function uploadDocument(data, config = {}) {
   return request({
     url: '/documents/upload/',
     method: 'post',
     data,
     headers: {
       'Content-Type': 'multipart/form-data'
-    }
+    },
+    onUploadProgress: config.onUploadProgress,
+    signal: config.signal
   })
 }
 
 /**
  * 批量上传资料
  */
-export function batchUploadDocuments(data) {
+export function batchUploadDocuments(data, config = {}) {
   return request({
     url: '/documents/batch-upload/',
     method: 'post',
     data,
     headers: {
       'Content-Type': 'multipart/form-data'
-    }
+    },
+    onUploadProgress: config.onUploadProgress,
+    signal: config.signal
   })
 }
 
