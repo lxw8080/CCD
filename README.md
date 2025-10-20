@@ -64,9 +64,13 @@
 
 ## 📚 文档导航
 
+> 💡 **不知道从哪里开始？** 查看 **[项目导航](项目导航.md)** 快速找到所需文档！
+
 ### 快速链接
+- **[项目导航](项目导航.md)** - 📖 完整文档导航和场景指引 ⭐
 - **[快速开始指南](QUICK_START.md)** - 快速搭建开发环境
 - **[完整用户手册](docs/guides/USER_GUIDE.md)** - 系统使用指南
+- **[无HMR模式说明](无HMR模式启动成功说明.md)** - 生产构建模式使用说明
 - **[文档中心](docs/README.md)** - 所有文档的导航
 - **[更新日志](CHANGELOG.md)** - 版本历史
 - **[项目结构](PROJECT_STRUCTURE.md)** - 代码结构说明
@@ -75,6 +79,12 @@
 - **用户**: [用户使用指南](docs/guides/USER_GUIDE.md)
 - **开发者**: [后端文档](backend/README.md) | [前端文档](frontend/README.md)
 - **运维**: [部署文档](deployment/README.md)
+
+### 按场景查找
+- **首次启动**: [QUICK_START.md](QUICK_START.md) → 运行 `bash start-dev.sh`
+- **日常开发**: 运行 `bash start-dev.sh` （支持热更新）
+- **测试演示**: 运行 `bash start-no-hmr.sh` （生产构建，更稳定）
+- **生产部署**: [deployment/README.md](deployment/README.md)
 
 ---
 
