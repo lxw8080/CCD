@@ -61,18 +61,94 @@
             @click="showStatusPicker = true"
             :rules="[{ required: true, message: '请选择状态' }]"
           />
-          
-          <van-field
-            v-model="form.remarks"
-            name="remarks"
-            label="备注"
-            type="textarea"
-            rows="4"
-            placeholder="请输入备注"
-            autosize
-          />
+
+          <!-- 动态自定义字段 -->
+          <template v-for="field in customFields" :key="field.id">
+            <!-- 文本输入 -->
+            <van-field
+              v-if="field.field_type === 'text' || field.field_type === 'email' || field.field_type === 'url'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              :placeholder="field.placeholder || `请输入${field.name}`"
+              :type="field.field_type === 'email' ? 'email' : field.field_type === 'url' ? 'url' : 'text'"
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 数字输入 -->
+            <van-field
+              v-else-if="field.field_type === 'number'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              type="number"
+              :placeholder="field.placeholder || `请输入${field.name}`"
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 日期选择 -->
+            <van-field
+              v-else-if="field.field_type === 'date'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              :placeholder="field.placeholder || `请选择${field.name}`"
+              readonly
+              is-link
+              @click="showDatePicker(field.id)"
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 下拉选择 -->
+            <van-field
+              v-else-if="field.field_type === 'select'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              :placeholder="field.placeholder || `请选择${field.name}`"
+              readonly
+              is-link
+              @click="showSelectPicker(field)"
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 多行文本 -->
+            <van-field
+              v-else-if="field.field_type === 'textarea'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              type="textarea"
+              rows="3"
+              :placeholder="field.placeholder || `请输入${field.name}`"
+              autosize
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 手机号 -->
+            <van-field
+              v-else-if="field.field_type === 'phone'"
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              type="tel"
+              maxlength="11"
+              :placeholder="field.placeholder || `请输入${field.name}`"
+              :rules="getFieldRules(field)"
+            />
+
+            <!-- 默认文本输入 -->
+            <van-field
+              v-else
+              v-model="form.custom_fields[field.id]"
+              :name="`custom_field_${field.id}`"
+              :label="field.name"
+              :placeholder="field.placeholder || `请输入${field.name}`"
+              :rules="getFieldRules(field)"
+            />
+          </template>
         </van-cell-group>
-        
+
         <div style="margin: 16px;">
           <van-button
             round
@@ -86,12 +162,30 @@
         </div>
       </van-form>
     </div>
-    
+
     <van-popup v-model:show="showStatusPicker" position="bottom">
       <van-picker
         :columns="statusColumns"
         @confirm="onStatusConfirm"
         @cancel="showStatusPicker = false"
+      />
+    </van-popup>
+
+    <!-- 日期选择器 -->
+    <van-popup v-model:show="showDatePickerPopup" position="bottom">
+      <van-date-picker
+        v-model="currentDate"
+        @confirm="onDateConfirm"
+        @cancel="showDatePickerPopup = false"
+      />
+    </van-popup>
+
+    <!-- 自定义字段选择器 -->
+    <van-popup v-model:show="showCustomSelectPicker" position="bottom">
+      <van-picker
+        :columns="currentSelectOptions"
+        @confirm="onCustomSelectConfirm"
+        @cancel="showCustomSelectPicker = false"
       />
     </van-popup>
   </div>
@@ -100,7 +194,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCustomer, createCustomer, updateCustomer } from '@/api/customer'
+import { getCustomer, createCustomer, updateCustomer, getCustomFields } from '@/api/customer'
 import { showToast } from 'vant'
 
 const route = useRoute()
@@ -108,7 +202,14 @@ const router = useRouter()
 
 const loading = ref(false)
 const showStatusPicker = ref(false)
+const showDatePickerPopup = ref(false)
+const showCustomSelectPicker = ref(false)
 const isEdit = computed(() => !!route.params.id)
+const customFields = ref([])
+const currentDate = ref(new Date())
+const currentDateFieldId = ref(null)
+const currentSelectOptions = ref([])
+const currentSelectFieldId = ref(null)
 
 const form = reactive({
   name: '',
@@ -116,7 +217,7 @@ const form = reactive({
   phone: '',
   address: '',
   status: '资料收集中',
-  remarks: ''
+  custom_fields: {}
 })
 
 const statusColumns = [
@@ -135,6 +236,145 @@ const statusMap = {
   rejected: '已拒绝'
 }
 
+// 获取字段验证规则
+const getFieldRules = (field) => {
+  const fieldRules = []
+
+  if (field.is_required) {
+    fieldRules.push({
+      required: true,
+      message: `请输入${field.name}`
+    })
+  }
+
+  // 文本长度验证
+  if (field.min_length || field.max_length) {
+    fieldRules.push({
+      validator: (val) => {
+        if (!val) return true
+        const len = val.length
+        if (field.min_length && len < field.min_length) {
+          return `长度不能少于${field.min_length}个字符`
+        }
+        if (field.max_length && len > field.max_length) {
+          return `长度不能超过${field.max_length}个字符`
+        }
+        return true
+      }
+    })
+  }
+
+  // 数字范围验证
+  if (field.field_type === 'number' && (field.min_value || field.max_value)) {
+    fieldRules.push({
+      validator: (val) => {
+        if (!val) return true
+        const num = Number(val)
+        if (field.min_value && num < field.min_value) {
+          return `最小值为${field.min_value}`
+        }
+        if (field.max_value && num > field.max_value) {
+          return `最大值为${field.max_value}`
+        }
+        return true
+      }
+    })
+  }
+
+  // 正则表达式验证
+  if (field.regex_pattern) {
+    fieldRules.push({
+      pattern: new RegExp(field.regex_pattern),
+      message: `${field.name}格式不正确`
+    })
+  }
+
+  // 特定类型验证
+  if (field.field_type === 'email') {
+    fieldRules.push({
+      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      message: '请输入正确的邮箱地址'
+    })
+  } else if (field.field_type === 'phone') {
+    fieldRules.push({
+      pattern: /^1[3-9]\d{9}$/,
+      message: '请输入正确的手机号'
+    })
+  } else if (field.field_type === 'url') {
+    fieldRules.push({
+      pattern: /^https?:\/\/.+/,
+      message: '请输入正确的网址'
+    })
+  }
+
+  return fieldRules
+}
+
+// 获取自定义字段列表
+const fetchCustomFields = async () => {
+  try {
+    const fields = await getCustomFields()
+    customFields.value = fields || []
+
+    // 只在新建模式下初始化自定义字段的默认值
+    // 编辑模式下，默认值会在 fetchCustomerDetail 中从服务器加载
+    if (!isEdit.value) {
+      fields.forEach(field => {
+        if (field.default_value && !form.custom_fields[field.id]) {
+          let defaultValue = field.default_value
+
+          // 处理动态默认值
+          if (field.field_type === 'date' && defaultValue === 'TODAY') {
+            // 获取当前日期，格式: YYYY-MM-DD
+            const today = new Date()
+            const year = today.getFullYear()
+            const month = String(today.getMonth() + 1).padStart(2, '0')
+            const day = String(today.getDate()).padStart(2, '0')
+            defaultValue = `${year}-${month}-${day}`
+          }
+
+          form.custom_fields[field.id] = defaultValue
+        }
+      })
+    }
+  } catch (error) {
+    console.error('获取自定义字段失败:', error)
+  }
+}
+
+// 显示日期选择器
+const showDatePicker = (fieldId) => {
+  currentDateFieldId.value = fieldId
+  const currentValue = form.custom_fields[fieldId]
+  if (currentValue) {
+    currentDate.value = new Date(currentValue)
+  } else {
+    currentDate.value = new Date()
+  }
+  showDatePickerPopup.value = true
+}
+
+// 日期选择确认
+const onDateConfirm = ({ selectedValues }) => {
+  const [year, month, day] = selectedValues
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  form.custom_fields[currentDateFieldId.value] = dateStr
+  showDatePickerPopup.value = false
+}
+
+// 显示自定义字段选择器
+const showSelectPicker = (field) => {
+  currentSelectFieldId.value = field.id
+  currentSelectOptions.value = field.options || []
+  showCustomSelectPicker.value = true
+}
+
+// 自定义字段选择确认
+const onCustomSelectConfirm = ({ selectedOptions }) => {
+  form.custom_fields[currentSelectFieldId.value] = selectedOptions[0]
+  showCustomSelectPicker.value = false
+}
+
 const onStatusConfirm = ({ selectedOptions }) => {
   form.status = selectedOptions[0].text
   showStatusPicker.value = false
@@ -146,7 +386,7 @@ const getStatusValue = (text) => {
 
 const fetchCustomerDetail = async () => {
   if (!isEdit.value) return
-  
+
   loading.value = true
   try {
     const customer = await getCustomer(route.params.id)
@@ -155,9 +395,15 @@ const fetchCustomerDetail = async () => {
       id_card: customer.id_card,
       phone: customer.phone,
       address: customer.address || '',
-      status: statusMap[customer.status] || '资料收集中',
-      remarks: customer.remarks || ''
+      status: statusMap[customer.status] || '资料收集中'
     })
+
+    // 填充自定义字段值
+    if (customer.custom_field_values && customer.custom_field_values.length > 0) {
+      customer.custom_field_values.forEach(fieldValue => {
+        form.custom_fields[fieldValue.custom_field] = fieldValue.value
+      })
+    }
   } catch (error) {
     showToast('获取客户信息失败')
   } finally {
@@ -172,7 +418,7 @@ const handleSubmit = async () => {
       ...form,
       status: getStatusValue(form.status)
     }
-    
+
     if (isEdit.value) {
       await updateCustomer(route.params.id, data)
       showToast({ message: '更新成功', type: 'success' })
@@ -192,8 +438,9 @@ const handleBack = () => {
   router.back()
 }
 
-onMounted(() => {
-  fetchCustomerDetail()
+onMounted(async () => {
+  await fetchCustomFields()
+  await fetchCustomerDetail()
 })
 </script>
 

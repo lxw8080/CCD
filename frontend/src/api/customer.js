@@ -63,3 +63,55 @@ export function getCustomerCompleteness(id) {
   })
 }
 
+/**
+ * 获取自定义字段列表
+ */
+export function getCustomFields() {
+  return request({
+    url: '/customers/custom-fields/',
+    method: 'get'
+  })
+}
+
+/**
+ * 获取自定义字段详情
+ */
+export function getCustomField(id) {
+  return request({
+    url: `/customers/custom-fields/${id}/`,
+    method: 'get'
+  })
+}
+
+/**
+ * 创建自定义字段
+ */
+export function createCustomField(data) {
+  return request({
+    url: '/customers/custom-fields/',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 更新自定义字段
+ */
+export function updateCustomField(id, data) {
+  return request({
+    url: `/customers/custom-fields/${id}/`,
+    method: 'put',
+    data
+  })
+}
+
+/**
+ * 删除自定义字段
+ */
+export function deleteCustomField(id) {
+  return request({
+    url: `/customers/custom-fields/${id}/`,
+    method: 'delete'
+  })
+}
+
