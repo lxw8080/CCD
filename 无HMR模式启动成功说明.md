@@ -128,16 +128,16 @@ tail -50 logs/frontend.log
 1. 日常开发（频繁修改代码）
 2. 需要快速迭代时
 
-### 切换到开发模式
+### 修改代码后重新启动
 
-如果需要频繁修改代码，建议切换回开发模式：
+如果修改了代码，需要重新构建和启动：
 
 ```bash
 # 停止无 HMR 模式
 bash stop-no-hmr.sh
 
-# 启动开发模式
-bash start-dev.sh
+# 重新启动（会自动重新构建）
+bash start-no-hmr.sh
 ```
 
 ## 性能优化说明

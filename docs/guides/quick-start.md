@@ -19,18 +19,18 @@ npm --version
 psql --version
 ```
 
-## 一键启动（开发环境）
+## 一键启动（无HMR模式）
 
 ### Windows用户
 
 ```cmd
-start-dev.bat
+start-no-hmr.bat
 ```
 
 ### Linux/Mac用户
 
 ```bash
-bash start-dev.sh
+bash start-no-hmr.sh
 ```
 
 **就这么简单！** 脚本会自动：
